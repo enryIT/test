@@ -81,7 +81,7 @@ condition:
 action:
   - choose:
       # if power>90
-        - conditions: >
+        - conditions: >-
             {{ actual_power >= 90 }}
         sequence:
           - service: system_log.write
@@ -106,7 +106,7 @@ action:
               offset: "{{ calculated_offsetH }}"
               entity_id: "{{ target_tado }}"
       # if power>60
-        - conditions: >
+        - conditions: >-
             {{ actual_power >= 60 }}
         sequence:
           - service: system_log.write
@@ -131,7 +131,7 @@ action:
               offset: "{{ calculated_offsetM }}"
               entity_id: "{{ target_tado }}"
       # if power>30
-        - conditions: >
+        - conditions: >-
             {{ actual_power >= 30 }}
         sequence:
           - service: system_log.write
@@ -156,7 +156,7 @@ action:
               offset: "{{ calculated_offsetL }}"
               entity_id: "{{ target_tado }}"
       # if power=0
-        - conditions: >
+        - conditions: >-
             {{ actual_power == 0 }}
         sequence:
           - service: system_log.write
