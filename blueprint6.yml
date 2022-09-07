@@ -1,0 +1,177 @@
+blueprint:
+  name: Tado temperature offset beta
+  description: Ensure the Tado smart valve has the temp of a separate sensor
+  domain: automation
+  input:
+    target_tado:
+      name: TadoRoom
+      description: The Tado room to set the offset on.
+      selector:
+        entity:
+          domain: climate
+    target_tado_dev:
+      name: TadoDevice
+      description: The Tado device to get the heating power from.
+      selector:
+        entity:
+          domain: sensor
+
+mode: single
+
+variables:
+  tolerance: 0.5
+  target_tado: !input target_tado
+  target_tado_dev: !input target_tado_dev
+  hvac_action: "{{ state_attr(target_tado, 'hvac_action') }}" # Tado heating status
+  actual_power: "{{ states(target_tado_dev) | float }}"
+  current_offset: "{{ state_attr(target_tado, 'offset_celsius') }}" # Tado sensors offset
+  tado_temp: "{{ state_attr(target_tado, 'current_temperature') | float }}" # Temp tado thinks it's at
+  tado_real_temp: "{{ ( tado_temp - current_offset) | float }}" # The temperature measured at the tado sensor
+  #source_temp_sensor: !input source_temp_sensor
+  #actual_temp: "{{ states(source_temp_sensor) | float }}" # Temperature measured by the other sensor
+  #early_start: ("binary_sensor." ~ target_tado ~ "_early_start")|regex_replace("climate.", ignorecase=True)
+  #offset: "{{ ( actual_temp - tado_temp ) | round }}" # Difference between the two sensors, as they are currently calibrated
+  offsetH: -3
+  offsetM: -2
+  offsetL: -1
+  calculated_offsetH: "{{ (offsetH + current_offset ) | round }}" # The offset needed on the tado sensor to best equilibrate the two sensor measurements
+  calculated_offsetM: "{{ (offsetM + current_offset ) | round }}" # The offset needed on the tado sensor to best equilibrate the two sensor measurements
+  calculated_offsetL: "{{ (offsetL + current_offset ) | round }}" # The offset needed on the tado sensor to best equilibrate the two sensor measurements
+  #raw_calculated_offset: "{{ (offset + current_offset ) | round }}" # The offset needed on the tado sensor to best equilibrate the two sensor measurements
+  #calculated_offset: "{% if (tado_real_temp - actual_temp) | float > 1 %}{{raw_calculated_offset * 2}}{% else %}{{raw_calculated_offset}}{% endif %}" # If the the tado sensor temperature is alot higher than the other sensor, the double the offset, this causes the tado to aim to overshoot the temperature and reduces the chance of it going on and off many times
+  last_updated: "{{ state_attr(target_tado, 'offset_last_changed') if state_attr(target_tado, 'offset_last_changed') != None else utcnow() - timedelta(seconds=(900|int +100)) }}"
+
+trigger:
+- platform: state
+  entity_id: !input target_tado
+  attribute: current_temperature
+#- platform: state
+#  entity_id: !input source_temp_sensor
+#  # Because I have a condition to only adjust offset when in home mode, I also want to trigger when I get home to immediately sync temp
+#- platform: state
+#  entity_id: !input target_tado
+#  attribute: preset_mode
+#  to: home
+- platform: state
+  entity_id: !input target_tado
+  attribute: hvac_action
+  for:
+    hours: 0
+    minutes: 15
+    seconds: 0
+#- platform: template
+#  value_template: "{{ offset >= 0.5 }}" 
+
+condition: 
+# Only run if temp states are a number i.e. hasn't become 'unavailable'
+- "{{ tado_temp|int != 0 or tado_temp == '0' }}"
+#- "{{ actual_temp|int != 0 or actual_temp == '0' }}"
+# Only run if the climate device is preset is 'home' or if 'early start' has been activated or offset is more than a difference of 2
+#- "{{ state_attr(target_tado, 'preset_mode') == 'home' or states(early_start) == 'on' or offset|float >= 2 or offset|float <= -2}}"
+# Only run if new offset is different to current offset
+#- "{{ offset != 0 }}"
+# Only run if there is a difference in temperature greater than the tolerance
+#- "{{ (actual_temp - tado_temp)|abs > tolerance }}"
+# Only run if offset hasn't been changed for longer than 15 minutes
+- "{{ ( as_timestamp(now()) - as_timestamp(state_attr('this', 'last_triggered')) |int(0) ) > 900 }}"
+# Only change the offset if it is going to make a difference to hvac action (so will send above or below target temp based on current hvac action state)
+- "{{ ((state_attr(target_tado, 'hvac_action') == 'heating' and (tado_temp + calculated_offsetH) >= state_attr(target_tado, 'temperature')|float) or (state_attr(target_tado, 'hvac_action') == 'heating' and (tado_temp + calculated_offsetM) >= state_attr(target_tado, 'temperature')|float) or (state_attr(target_tado, 'hvac_action') == 'heating' and (tado_temp + calculated_offsetL) >= state_attr(target_tado, 'temperature')|float)) or ((state_attr(target_tado, 'hvac_action') == 'idle' and (tado_temp + calculated_offsetH) <= state_attr(target_tado, 'temperature')|float) or (state_attr(target_tado, 'hvac_action') == 'idle' and (tado_temp + calculated_offsetM) <= state_attr(target_tado, 'temperature')|float) or (state_attr(target_tado, 'hvac_action') == 'idle' and (tado_temp + calculated_offsetL) <= state_attr(target_tado, 'temperature')|float)) }}"
+
+action:
+  - choose:
+      # if power>90
+      - conditions: "{{ actual_power >= 90 }}"
+        sequence:
+          - service: system_log.write
+            data:
+              message: >
+                {{ target_tado }} has temp difference of {{ offsetH }}. Setting offset to {{ calculated_offsetH }}
+              level: info
+              logger: blueprints.tado.offset
+          - service: system_log.write
+            data:
+              message: >
+                target: {{ target_tado }} 
+                temp difference: {{ offsetH }}
+                tado_temp: {{ tado_temp }}
+                current_offset: {{ current_offset }}
+                calculated_offset: {{ calculated_offsetH }}
+                heating_state : {{ state_attr(target_tado, 'hvac_action') }}
+              level: debug
+              logger: blueprints.tado.offset
+          - service: tado.set_climate_temperature_offset
+            data:
+              offset: "{{ calculated_offsetH }}"
+              entity_id: "{{ target_tado }}"
+      # if power>60
+      - conditions: "{{ actual_power >= 60 }}"
+        sequence:
+          - service: system_log.write
+            data:
+              message: >
+                {{ target_tado }} has temp difference of {{ offsetM }}. Setting offset to {{ calculated_offsetM }}
+              level: info
+              logger: blueprints.tado.offset
+          - service: system_log.write
+            data:
+              message: >
+                target: {{ target_tado }} 
+                temp difference: {{ offsetM }}
+                tado_temp: {{ tado_temp }}
+                current_offset: {{ current_offset }}
+                calculated_offset: {{ calculated_offsetM }}
+                heating_state : {{ state_attr(target_tado, 'hvac_action') }}
+              level: debug
+              logger: blueprints.tado.offset
+          - service: tado.set_climate_temperature_offset
+            data:
+              offset: "{{ calculated_offsetM }}"
+              entity_id: "{{ target_tado }}"
+      # if power>30
+      - conditions: "{{ actual_power >= 30 }}"
+        sequence:
+          - service: system_log.write
+            data:
+              message: >
+                {{ target_tado }} has temp difference of {{ offsetL }}. Setting offset to {{ calculated_offsetL }}
+              level: info
+              logger: blueprints.tado.offset
+          - service: system_log.write
+            data:
+              message: >
+                target: {{ target_tado }} 
+                temp difference: {{ offsetL }}
+                tado_temp: {{ tado_temp }}
+                current_offset: {{ current_offset }}
+                calculated_offset: {{ calculated_offsetL }}
+                heating_state : {{ state_attr(target_tado, 'hvac_action') }}
+              level: debug
+              logger: blueprints.tado.offset
+          - service: tado.set_climate_temperature_offset
+            data:
+              offset: "{{ calculated_offsetL }}"
+              entity_id: "{{ target_tado }}"
+      # if power=0
+      - conditions: "{{ actual_power == 0 }}"
+        sequence:
+          - service: system_log.write
+            data:
+              message: >
+                {{ target_tado }} has no temp difference. Setting offset to 0
+              level: info
+              logger: blueprints.tado.offset
+          - service: system_log.write
+            data:
+              message: >
+                target: {{ target_tado }} 
+                temp difference: 0
+                tado_temp: {{ tado_temp }}
+                current_offset: {{ current_offset }}
+                calculated_offset: 0
+                heating_state : {{ state_attr(target_tado, 'hvac_action') }}
+              level: debug
+              logger: blueprints.tado.offset
+          - service: tado.set_climate_temperature_offset
+            data:
+              offset: "0"
+              entity_id: "{{ target_tado }}"
