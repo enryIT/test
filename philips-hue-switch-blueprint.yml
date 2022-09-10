@@ -97,7 +97,7 @@ trigger:
   entity_id: !input "dimmer"
 action:
   - variables:
-      command: "{{ trigger.to_state.attributes.action }}"
+      command: "{{ trigger.to_state.state }}"
       step: !input "step"
       negative_step: "{{ -1 * (step | int) }}"
   - choose:
