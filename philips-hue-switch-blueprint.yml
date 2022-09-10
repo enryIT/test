@@ -101,7 +101,7 @@ action:
       step: !input "step"
       negative_step: "{{ -1 * (step | int) }}"
   - choose:
-      - conditions: "{{ command == 'on-press' }}"
+      - conditions: "{{ command == 'on_press' }}"
         sequence:
           - service: light.turn_on
             data_template:
@@ -109,34 +109,34 @@ action:
               transition: !input "trans-on"
               color_temp: !input "color_tmp"
               brightness_pct: !input default_brightness
-      - conditions: "{{ command == 'off-press' }}"
+      - conditions: "{{ command == 'off_press' }}"
         sequence:
           - service: light.turn_off
             data_template:
               entity_id: !input "light"
               transition: !input "trans-off"
-      - conditions: "{{ command == 'down-press' or command == 'down-hold' }}"
+      - conditions: "{{ command == 'down_press' or command == 'down_hold' }}"
         sequence:
           - service: light.turn_on
             data_template:
               entity_id: !input "light"
               brightness_step_pct: "{{ negative_step }}"
               transition: !input "trans-on"
-      - conditions: "{{ command == 'up-press' or command == 'up-hold' }}"
+      - conditions: "{{ command == 'up_press' or command == 'up_hold' }}"
         sequence:
           - service: light.turn_on
             data_template:
               entity_id: !input "light"
               brightness_step_pct: "{{ step }}"
               transition: !input "trans-on"
-      - conditions: "{{ command == 'on-hold' }}"
+      - conditions: "{{ command == 'on_hold' }}"
         sequence:
           - service: light.turn_on
             data_template:
               entity_id: !input "light"
               brightness: 255
               transition: !input "trans-on"
-      - conditions: "{{ command == 'off-hold' }}"
+      - conditions: "{{ command == 'off_hold' }}"
         sequence:
           - service: light.turn_on
             data_template:
